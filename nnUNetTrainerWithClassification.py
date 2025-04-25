@@ -20,44 +20,192 @@ import os
 import pandas as pd
 from sklearn.metrics import f1_score
 from batchgenerators.utilities.file_and_folder_operations import join, load_json, isfile, save_json, maybe_mkdir_p
+from sklearn.utils.class_weight import compute_class_weight
+from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 
-class ClassificationHead(nn.Module):
-    """
-        A simple classification head for 3D data.
-        It uses an adaptive average pooling layer followed by a fully connected layer.
-    """
-    def __init__(self, in_channels, num_classes, dropout_p=0.3, hidden_dim=128):
-        super().__init__()
-        self.pool = nn.AdaptiveAvgPool3d(1)  # [B, C, 1, 1, 1]
-        self.flatten = nn.Flatten() # check if it keeps batch should be [B, C]
-        self.classifier = nn.Sequential(
-            nn.Linear(in_channels, hidden_dim),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout_p),
-            nn.Linear(hidden_dim, num_classes)
-        )
+# fold_2_old is with the first version of the classificationhead; is stopped it because it didn't imporve the validation by 50 epochs
+# fold_1 is running with version 4 and 0.3 class loss
+# fold_2 is running with version 5 and equal loss
+# on nao fold_0 and fold_1 are running with version 1 and equal loss
+# on hpc fold_0 slurm version 5 and 0.3 class loss  ---> this is the best one
+# on hpc fold_1 interactive version 5 and 2 class loss 
 
-    def forward(self, x):
-        x = self.pool(x)
-        x = self.flatten(x)
-        return self.classifier(x)
-
+# version 1
 # class ClassificationHead(nn.Module):
-#     def __init__(self, in_channels, num_classes, dropout_p=0.5, hidden_dim=512):
+#     """
+#         A simple classification head for 3D data.
+#         It uses an adaptive average pooling layer followed by a fully connected layer.
+#     """
+#     def __init__(self, in_channels, num_classes, dropout_p=0.3, hidden_dim=128):
 #         super().__init__()
-#         self.pool = nn.AdaptiveAvgPool3d(1)
-#         self.flatten = nn.Flatten()
+#         self.pool = nn.AdaptiveAvgPool3d(1)  # [B, C, 1, 1, 1]
+#         self.flatten = nn.Flatten() # check if it keeps batch should be [B, C]
 #         self.classifier = nn.Sequential(
 #             nn.Linear(in_channels, hidden_dim),
-#             nn.BatchNorm1d(hidden_dim),  # Added BN
 #             nn.ReLU(inplace=True),
 #             nn.Dropout(dropout_p),
-#             nn.Linear(hidden_dim, hidden_dim//2),
-#             nn.BatchNorm1d(hidden_dim//2),  # Added BN
-#             nn.ReLU(inplace=True),
-#             nn.Dropout(dropout_p),
-#             nn.Linear(hidden_dim//2, num_classes)
+#             nn.Linear(hidden_dim, num_classes)
 #         )
+
+#     def forward(self, x):
+#         x = self.pool(x)
+#         x = self.flatten(x)
+#         return self.classifier(x)
+
+# version 2
+# class ClassificationHead(nn.Module):
+#     def __init__(self, in_channels, num_classes, dropout_p=0.2, hidden_dim=512):
+#         super().__init__()
+#         self.pool = nn.AdaptiveAvgPool3d(1)  # Reduce to (B, C, 1, 1, 1)
+#         self.flatten = nn.Flatten()          # Flatten to (B, C)
+#         self.classifier = nn.Sequential(
+#             nn.Linear(in_channels, hidden_dim),
+#             nn.BatchNorm1d(hidden_dim),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(dropout_p),
+
+#             nn.Linear(hidden_dim, hidden_dim // 2),
+#             nn.BatchNorm1d(hidden_dim // 2),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(dropout_p),
+
+#             nn.Linear(hidden_dim // 2, num_classes)
+#         )
+
+#     def forward(self, x):
+#         x = self.pool(x)
+#         x = self.flatten(x)
+#         return self.classifier(x)
+
+# version 3
+# class ClassificationHead(nn.Module):
+#     def __init__(self, in_channels, num_classes, dropout_p=0.3, hidden_dim=128):
+#         super().__init__()
+#         self.feature_adapt = nn.Sequential(
+#             nn.Conv3d(in_channels, in_channels//2, kernel_size=3, padding=1),
+#             nn.BatchNorm3d(in_channels//2),
+#             nn.ReLU(inplace=True),
+#             nn.AdaptiveAvgPool3d(1)
+#         )
+#         self.flatten = nn.Flatten()
+#         self.classifier = nn.Sequential(
+#             nn.Linear(in_channels//2, hidden_dim),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(dropout_p),
+#             nn.Linear(hidden_dim, num_classes)
+#         )
+
+#     def forward(self, x):
+#         # x shape: [batch_size, in_channels, depth, height, width]
+        
+#         # 1. Feature adaptation
+#         x = self.feature_adapt(x)  
+#         # shape becomes: [batch_size, in_channels//2, 1, 1, 1]
+        
+#         # 2. Flatten for fully connected layers
+#         x = self.flatten(x)  
+#         # shape becomes: [batch_size, in_channels//2]
+        
+#         # 3. Classification
+#         x = self.classifier(x)  
+#         # shape becomes: [batch_size, num_classes]
+    
+#         return x
+
+# version 4
+# class ClassificationHead(nn.Module):
+#     def __init__(self, encoder_channels, num_classes, hidden_dim=128, dropout_p=0.3):
+#         super().__init__()
+#         self.global_pool = nn.AdaptiveMaxPool3d(1)
+#         self.flatten = nn.Flatten()
+
+#         total_channels = sum(encoder_channels)
+
+#         self.classifier = nn.Sequential(
+#             nn.Linear(total_channels, hidden_dim),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(p=dropout_p),
+#             nn.Linear(hidden_dim, num_classes)
+#         )
+
+#     def forward(self, encoder_features):
+#         # Only use selected encoder features
+#         pooled = [self.flatten(self.global_pool(f)) for f in encoder_features]
+#         concat = torch.cat(pooled, dim=1)
+#         out = self.classifier(concat)
+#         return out
+
+# version 5
+class ClassificationHead(nn.Module):
+    def __init__(self, encoder_channels, num_classes=3, hidden_dim=256, dropout_p=0.3):
+        super().__init__()
+        
+        # Validate input
+        if len(encoder_channels) < 3:
+            raise ValueError("Encoder must have at least 3 feature maps")
+        
+        # Take the last 3 feature maps (now works with [256, 320, 320])
+        selected_channels = encoder_channels[-3:]
+        
+        # Feature compression (adapts to actual channel dims)
+        self.feature_adapters = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv3d(ch, 64, kernel_size=1, bias=False),  # Reduce to 64 channels
+                nn.BatchNorm3d(64),
+                nn.GELU(),
+                nn.AdaptiveAvgPool3d((4, 4, 4))  # Downsample to (4,4,4)
+            ) for ch in selected_channels
+        ])
+        
+        # Enhanced fusion
+        self.fusion = nn.Sequential(
+            nn.Conv3d(64 * 3, hidden_dim, kernel_size=3, padding=1),
+            nn.BatchNorm3d(hidden_dim),
+            nn.GELU(),
+            nn.AdaptiveAvgPool3d(1)
+        )
+        
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.GELU(),
+            nn.Dropout(p=dropout_p),
+            nn.Linear(hidden_dim // 2, num_classes)
+        )
+        
+        # Initialize weights
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm3d, nn.LayerNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, encoder_features):
+        # Input validation
+        if len(encoder_features) < 3:
+            raise ValueError(f"Expected ≥3 feature maps, got {len(encoder_features)}")
+        
+        # Process last 3 features
+        adapted = []
+        for i, adapter in enumerate(self.feature_adapters):
+            feat = encoder_features[-(3 - i)]  # Get features from last to -3
+            adapted.append(adapter(feat))
+        
+        # Concatenate and fuse
+        x = torch.cat(adapted, dim=1)
+        x = self.fusion(x).flatten(1)
+        
+        return self.classifier(x)
 
 class nnUNetTrainerWithClassification(nnUNetTrainer):
 
@@ -82,6 +230,20 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
         # if 'classification_accuracy' not in self.logger.my_fantastic_logging:
         #     self.logger.my_fantastic_logging['classification_accuracy'] = []
 
+        # === Load subtype CSV and compute class weights ===
+
+        # csv_path = "nnUNet_preprocessed/Dataset003_PancreasMultiTask/subtype_results_train.csv"
+        # df = pd.read_csv(csv_path)
+        # labels = df['Subtype'].values
+
+        # # Compute and store class weights
+        # class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(labels), y=labels)
+        # self.class_weights = torch.tensor(class_weights, dtype=torch.float32, device=self.device)
+        # self.class_weights /= self.class_weights.sum()  # normalize if you want
+
+        # self.print_to_log_file(f"Loaded class weights (normalized): {self.class_weights.tolist()}")
+    
+
     # inherit from nnUNetTrainer, so same input arguments
     def build_network_architecture(self, architecture_class_name, arch_init_kwargs, arch_init_kwargs_req_import,
                                    num_input_channels, num_output_channels, enable_deep_supervision=True):
@@ -90,11 +252,57 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             num_input_channels, num_output_channels, enable_deep_supervision
         )
 
-        # Store encoder output channels from network for classification head
+        # Store encoder output channels from network for classification head for version 1
+        # encoder_output_channels = network.encoder.output_channels
+        # network.ClassificationHead = ClassificationHead(encoder_output_channels[-1], num_classes=3).to(self.device)
+        # network.ClassificationHead.apply(InitWeights_He(1e-2))
+
+        # Store encoder output channels from network for classification head for version 4
+        # encoder_output_channels = network.encoder.output_channels
+        # selected_encoder_channels = encoder_output_channels[:5]  # [32, 64, 128, 256, 320]
+        # network.ClassificationHead = ClassificationHead(
+        #     selected_encoder_channels,
+        #     num_classes=3
+        # ).to(self.device)
+        # network.ClassificationHead.apply(InitWeights_He(1e-2))
+
+        # Store encoder output channels from network for classification head for version 5
         encoder_output_channels = network.encoder.output_channels
-        self.classification_head = ClassificationHead(encoder_output_channels[-1], num_classes=3).to(self.device)
-        self.classification_head.apply(InitWeights_He(1e-2))
+        network.ClassificationHead = ClassificationHead(
+            encoder_output_channels,
+            num_classes=3
+        ).to(self.device)
         return network
+    
+    # def configure_optimizers(self):
+    #     # Separate parameters explicitly
+    #     base_params = []
+    #     head_params = []
+        
+    #     for name, param in self.network.named_parameters():
+    #         if 'ClassificationHead' in name:
+    #             head_params.append(param)
+    #         else:
+    #             base_params.append(param)
+        
+    #     params = [
+    #         {"params": base_params, 
+    #         "lr": self.initial_lr,
+    #         "weight_decay": self.weight_decay},
+            
+    #         {"params": head_params,
+    #         "lr": self.initial_lr / 10,  # lower LR for classification
+    #         "weight_decay": self.weight_decay}
+    #     ]
+        
+    #     optimizer = torch.optim.SGD(
+    #         params,
+    #         momentum=0.99,
+    #         nesterov=True
+    #     )
+        
+    #     lr_scheduler = PolyLRScheduler(optimizer, self.initial_lr, self.num_epochs)
+    #     return optimizer, lr_scheduler
 
     # override train_step and validation_step to include classification loss
     def train_step(self, batch: dict) -> dict:
@@ -136,14 +344,23 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             # dec_features = self.network.decoder(enc_features)
             # for i, dec in enumerate(dec_features):
             #     print(f"Decoder features shape [{i}]: {dec.shape}")
+
+            # for version 1
             # 32, 64, 128, 256, 320, 320 --> 3, 320, 4, 4, 6
-            class_logits = self.classification_head(enc_features[-1])
+            # class_logits = self.network.ClassificationHead(enc_features[-1])
+
+            # for version 4
+            # class_logits = self.network.ClassificationHead(enc_features[:5])
+
+            # for version 5
+            class_logits = self.network.ClassificationHead(enc_features)
 
             seg_loss = self.loss(seg_output, target)
 
             if subtype is not None:
+                #class_loss = nn.CrossEntropyLoss(weight=self.class_weights)(class_logits, subtype.long())
                 class_loss = nn.CrossEntropyLoss()(class_logits, subtype.long())   
-                total_loss = seg_loss + class_loss  # Weighted combo
+                total_loss = seg_loss + 0.3 * class_loss  # Weighted combo
             else:
                 total_loss = seg_loss
 
@@ -182,18 +399,29 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             subtype = subtype.to(self.device, non_blocking=True)
 
         with torch.autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
+            
             seg_output = self.network(data)
             # Get the deepest feature map from the encoder
             # This is the output of the last encoder block before the bottleneck
             # This is where we will apply the classification head
             enc_features = self.network.encoder(data)
-            class_logits = self.classification_head(enc_features[-1])
+
+            # for version 1
+            # 32, 64, 128, 256, 320, 320 --> 3, 320, 4, 4, 6
+            # class_logits = self.network.ClassificationHead(enc_features[-1])
+
+            # for version 4
+            # class_logits = self.network.ClassificationHead(enc_features[:5])
+
+            # for version 5
+            class_logits = self.network.ClassificationHead(enc_features)
 
             seg_loss = self.loss(seg_output, target)
 
             if subtype is not None:
+                # class_loss = nn.CrossEntropyLoss(weight=self.class_weights)(class_logits, subtype.long()) # 3x3 and subtype 3
                 class_loss = nn.CrossEntropyLoss()(class_logits, subtype.long()) # 3x3 and subtype 3
-                total_loss = seg_loss + class_loss
+                total_loss = seg_loss + 0.3 * class_loss
 
                 # preds = torch.argmax(class_logits, dim=1)
                 # correct = (preds == subtype).sum().item()
@@ -320,7 +548,6 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
 
     def on_epoch_end(self):
         super().on_epoch_end()
-
         # Log classification F1
         if 'classification_f1' in self.logger.my_fantastic_logging:
             f1 = self.logger.my_fantastic_logging['classification_f1'][-1]
