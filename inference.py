@@ -68,7 +68,9 @@ class PredictorWithClassification(nnUNetPredictor):
                 # Classification output using encoder features
                 with torch.no_grad():
                     enc_feats = self.network.encoder(data.to(self.device))
-                    class_logits = self.network.ClassificationHead(enc_feats[-1].unsqueeze(0))
+                    # class_logits = self.network.ClassificationHead(enc_feats[-1].unsqueeze(0))
+                    enc_feats = [enc.unsqueeze(0) for enc in enc_feats]
+                    class_logits = self.network.ClassificationHead(enc_feats)
                     class_logits = torch.softmax(class_logits, dim=1).squeeze().tolist()
 
                 # Store classification output (by basename of output file)
@@ -125,8 +127,17 @@ def static_build_network_architecture(architecture_class_name, arch_init_kwargs,
         architecture_class_name, arch_init_kwargs, arch_init_kwargs_req_import,
         num_input_channels, num_output_channels, enable_deep_supervision
     )
+    # Store encoder output channels from network for classification head for version 1
+    # encoder_output_channels = network.encoder.output_channels
+    # network.ClassificationHead = ClassificationHead(encoder_output_channels[-1], num_classes=3).to(torch.device("cuda"))
+    # return network
+
+    # Store encoder output channels from network for classification head for version 5
     encoder_output_channels = network.encoder.output_channels
-    network.ClassificationHead = ClassificationHead(encoder_output_channels[-1], num_classes=3).to(torch.device("cuda"))
+    network.ClassificationHead = ClassificationHead(
+        encoder_output_channels,
+        num_classes=3
+    ).to(torch.device('cuda', 1))
     return network
 
 nnUNetTrainerWithClassification.build_network_architecture = static_build_network_architecture
