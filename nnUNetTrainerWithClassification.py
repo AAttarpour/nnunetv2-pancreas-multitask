@@ -1,8 +1,9 @@
 """
 This file ingerits from nnUNetTrainer and adds a classification head to the nnUNet architecture.
 so that we can train a nnUNet model for both segmentation and classification tasks.
-The nnUNetTrainerWithClassification class builds upon the nnUNetTrainer class and modifies the network architecture to include a classification head.
-It also overrides the training step to compute both segmentation and classification losses.
+The nnUNetTrainerWithClassification class builds upon the nnUNetTrainer class and modifies
+the network architecture to include a classification head.
+It also overrides the train, and validation step to compute both segmentation and classification losses.
 
 """
 
@@ -23,14 +24,8 @@ from batchgenerators.utilities.file_and_folder_operations import join, load_json
 from sklearn.utils.class_weight import compute_class_weight
 from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 
-# fold_2_old is with the first version of the classificationhead; is stopped it because it didn't imporve the validation by 50 epochs
-# fold_1 is running with version 4 and 0.3 class loss
-# fold_2 is running with version 5 and equal loss
-# on nao fold_0 and fold_1 are running with version 1 and equal loss
-# on hpc fold_0 slurm version 5 and 0.3 class loss  ---> this is the best one
-# on hpc fold_1 interactive version 5 and 2 class loss 
 
-# version 1
+# version 1: simple classification head; it operates on the features last layer of encoder
 # class ClassificationHead(nn.Module):
 #     """
 #         A simple classification head for 3D data.
@@ -52,67 +47,7 @@ from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 #         x = self.flatten(x)
 #         return self.classifier(x)
 
-# version 2
-# class ClassificationHead(nn.Module):
-#     def __init__(self, in_channels, num_classes, dropout_p=0.2, hidden_dim=512):
-#         super().__init__()
-#         self.pool = nn.AdaptiveAvgPool3d(1)  # Reduce to (B, C, 1, 1, 1)
-#         self.flatten = nn.Flatten()          # Flatten to (B, C)
-#         self.classifier = nn.Sequential(
-#             nn.Linear(in_channels, hidden_dim),
-#             nn.BatchNorm1d(hidden_dim),
-#             nn.ReLU(inplace=True),
-#             nn.Dropout(dropout_p),
-
-#             nn.Linear(hidden_dim, hidden_dim // 2),
-#             nn.BatchNorm1d(hidden_dim // 2),
-#             nn.ReLU(inplace=True),
-#             nn.Dropout(dropout_p),
-
-#             nn.Linear(hidden_dim // 2, num_classes)
-#         )
-
-#     def forward(self, x):
-#         x = self.pool(x)
-#         x = self.flatten(x)
-#         return self.classifier(x)
-
-# version 3
-# class ClassificationHead(nn.Module):
-#     def __init__(self, in_channels, num_classes, dropout_p=0.3, hidden_dim=128):
-#         super().__init__()
-#         self.feature_adapt = nn.Sequential(
-#             nn.Conv3d(in_channels, in_channels//2, kernel_size=3, padding=1),
-#             nn.BatchNorm3d(in_channels//2),
-#             nn.ReLU(inplace=True),
-#             nn.AdaptiveAvgPool3d(1)
-#         )
-#         self.flatten = nn.Flatten()
-#         self.classifier = nn.Sequential(
-#             nn.Linear(in_channels//2, hidden_dim),
-#             nn.ReLU(inplace=True),
-#             nn.Dropout(dropout_p),
-#             nn.Linear(hidden_dim, num_classes)
-#         )
-
-#     def forward(self, x):
-#         # x shape: [batch_size, in_channels, depth, height, width]
-        
-#         # 1. Feature adaptation
-#         x = self.feature_adapt(x)  
-#         # shape becomes: [batch_size, in_channels//2, 1, 1, 1]
-        
-#         # 2. Flatten for fully connected layers
-#         x = self.flatten(x)  
-#         # shape becomes: [batch_size, in_channels//2]
-        
-#         # 3. Classification
-#         x = self.classifier(x)  
-#         # shape becomes: [batch_size, num_classes]
-    
-#         return x
-
-# version 4
+# version 2: multi depth classification head; it operates on the features of the encoder
 # class ClassificationHead(nn.Module):
 #     def __init__(self, encoder_channels, num_classes, hidden_dim=128, dropout_p=0.3):
 #         super().__init__()
@@ -135,7 +70,7 @@ from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 #         out = self.classifier(concat)
 #         return out
 
-# version 5
+# version 3: multi depth classification head with feature adaptor; it operates on the features of the last three layers of the encoder
 class ClassificationHead(nn.Module):
     def __init__(self, encoder_channels, num_classes=3, hidden_dim=256, dropout_p=0.3):
         super().__init__()
@@ -225,12 +160,8 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             for _, row in df.iterrows()
         }
 
-        # Initialize your custom logging key
-            # Add custom logging key so logger can track it
-        # if 'classification_accuracy' not in self.logger.my_fantastic_logging:
-        #     self.logger.my_fantastic_logging['classification_accuracy'] = []
-
         # === Load subtype CSV and compute class weights ===
+        # Uncomment the following lines if you want to compute class weights and use them in training
 
         # csv_path = "nnUNet_preprocessed/Dataset003_PancreasMultiTask/subtype_results_train.csv"
         # df = pd.read_csv(csv_path)
@@ -257,7 +188,7 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
         # network.ClassificationHead = ClassificationHead(encoder_output_channels[-1], num_classes=3).to(self.device)
         # network.ClassificationHead.apply(InitWeights_He(1e-2))
 
-        # Store encoder output channels from network for classification head for version 4
+        # Store encoder output channels from network for classification head for version 2
         # encoder_output_channels = network.encoder.output_channels
         # selected_encoder_channels = encoder_output_channels[:5]  # [32, 64, 128, 256, 320]
         # network.ClassificationHead = ClassificationHead(
@@ -274,6 +205,7 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
         ).to(self.device)
         return network
     
+    # override configure_optimizers to use different learning rates for the classification head
     # def configure_optimizers(self):
     #     # Separate parameters explicitly
     #     base_params = []
@@ -308,8 +240,8 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
     def train_step(self, batch: dict) -> dict:
         data = batch['data'].to(self.device, non_blocking=True)
         target = batch['target']
-        # Check if subtype is present in the batch
-        # subtype = batch.get('subtype', None)
+
+        # get the subtype from the batch
         case_ids = batch['keys']
         subtype = torch.tensor(
             [self.subtype_dict[k] for k in case_ids],
@@ -337,28 +269,24 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             # DEBUG PRINTING
             # for enc_feature in enc_features:
             #     print(f"Encoder features shape: {enc_feature.shape}")
-            
-
-            # DEBUG PRINTING
-            # Run decoder
-            # dec_features = self.network.decoder(enc_features)
-            # for i, dec in enumerate(dec_features):
-            #     print(f"Decoder features shape [{i}]: {dec.shape}")
 
             # for version 1
             # 32, 64, 128, 256, 320, 320 --> 3, 320, 4, 4, 6
             # class_logits = self.network.ClassificationHead(enc_features[-1])
 
-            # for version 4
+            # for version 2
             # class_logits = self.network.ClassificationHead(enc_features[:5])
 
-            # for version 5
+            # for version 3
             class_logits = self.network.ClassificationHead(enc_features)
 
             seg_loss = self.loss(seg_output, target)
 
             if subtype is not None:
+
+                # uncomment this line if you want to use class weights
                 #class_loss = nn.CrossEntropyLoss(weight=self.class_weights)(class_logits, subtype.long())
+
                 class_loss = nn.CrossEntropyLoss()(class_logits, subtype.long())   
                 total_loss = seg_loss + 0.3 * class_loss  # Weighted combo
             else:
@@ -381,8 +309,8 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
     def validation_step(self, batch: dict) -> dict:
         data = batch['data'].to(self.device, non_blocking=True)
         target = batch['target']
-        # Check if subtype is present in the batch
-        # subtype = batch.get('subtype', None)
+
+        # get the subtype from the batch
         case_ids = batch['keys']
         subtype = torch.tensor(
             [self.subtype_dict[k] for k in case_ids],
@@ -419,25 +347,20 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             seg_loss = self.loss(seg_output, target)
 
             if subtype is not None:
+
+                # uncomment this line if you want to use class weights
                 # class_loss = nn.CrossEntropyLoss(weight=self.class_weights)(class_logits, subtype.long()) # 3x3 and subtype 3
+
                 class_loss = nn.CrossEntropyLoss()(class_logits, subtype.long()) # 3x3 and subtype 3
-                total_loss = seg_loss + 0.3 * class_loss
-
-                # preds = torch.argmax(class_logits, dim=1)
-                # correct = (preds == subtype).sum().item()
-                # total = subtype.size(0)
-
+                total_loss = seg_loss + 0.3 * class_loss # Weighted combo
                 preds = torch.argmax(class_logits, dim=1)
                 f1 = f1_score(subtype.cpu().numpy(), preds.cpu().numpy(), average='macro')
             else:
                 total_loss = seg_loss
-                # correct = total = 0
                 f1 = 0
 
         result = {
             'loss': total_loss.detach().cpu().numpy(),
-            # 'classification_correct': correct,
-            # 'classification_total': total
             'classification_f1': f1
         }
 
@@ -498,22 +421,12 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
             dist.all_gather_object(losses_val, outputs_collated['loss'])
             loss_here = np.vstack(losses_val).mean()
 
-            # Gather classification
-            # class_correct = [None for _ in range(world_size)]
-            # class_total = [None for _ in range(world_size)]
-            # dist.all_gather_object(class_correct, outputs_collated['classification_correct'])
-            # dist.all_gather_object(class_total, outputs_collated['classification_total'])
-            # class_correct = np.sum(class_correct)
-            # class_total = np.sum(class_total)
-
-            # switch to f1
+            # f1
             f1s = [None for _ in range(world_size)]
             dist.all_gather_object(f1s, outputs_collated['classification_f1'])
             f1 = np.mean(f1s)
         else:
             loss_here = np.mean(outputs_collated['loss'])
-            # class_correct = np.sum(outputs_collated['classification_correct'])
-            # class_total = np.sum(outputs_collated['classification_total'])
 
             # switch to f1
             f1 = np.mean(outputs_collated['classification_f1'])
@@ -526,24 +439,11 @@ class nnUNetTrainerWithClassification(nnUNetTrainer):
         self.logger.log('dice_per_class_or_region', global_dc_per_class, self.current_epoch)
         self.logger.log('val_losses', loss_here, self.current_epoch)
 
-        # Store classification accuracy to logging buffer manually
-        # if 'classification_accuracy' not in self.logger.my_fantastic_logging:
-        #     self.logger.my_fantastic_logging['classification_accuracy'] = []
         # Store F1 values
         if 'classification_f1' not in self.logger.my_fantastic_logging:
             self.logger.my_fantastic_logging['classification_f1'] = []
 
-        # if class_total > 0:
-        #     class_acc = class_correct / class_total
-        #     self.logger.my_fantastic_logging['classification_accuracy'].append(class_acc)
-        #     self.print_to_log_file(f"Validation classification accuracy: {class_acc:.4f}")
-        # else:
-        #     self.logger.my_fantastic_logging['classification_accuracy'].append(0.0)
-        #     self.print_to_log_file("No classification labels available during validation.")
-
-
         self.logger.my_fantastic_logging['classification_f1'].append(f1)
-        # self.print_to_log_file(f"Validation macro F1: {f1:.4f}")
 
 
     def on_epoch_end(self):
