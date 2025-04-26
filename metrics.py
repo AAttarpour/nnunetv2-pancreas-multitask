@@ -311,8 +311,6 @@ def main():
     print("\nGenerating visualizations...")
     plot_segmentation_metrics(seg_metrics, args.output_dir)
     
-    import pdb; pdb.set_trace()
-
     print("\nCalculating classification metrics...")
     cls_metrics = calculate_classification_metrics(args.csv_path, args.logits_path)
     print("\nGenerating visualizations...")
