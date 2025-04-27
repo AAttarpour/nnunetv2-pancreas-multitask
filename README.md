@@ -119,11 +119,15 @@ Evaluation includes:
 
 ## 📊 Results
 
-| Model                        | DSC (Pancreas) | DSC (Lesion) | Macro F1 |
-|-----------------------------|----------------|--------------|----------|
-| Our Multi-Task Model (Fold 0)| 0.94           | 0.65         | 0.72     |
+| Our Multi-Task Model                        | DSC (Pancreas) | DSC (Lesion) | Macro F1 | Combined Score |
+|-------------------------------|----------------|--------------|----------|----------------|
+| Fold 0 | 0.9058          | 0.6992       | 0.9102   | 0.8564         |
+| Fold 1 | 0.9143          | 0.7879       | 0.8072   | 0.8292         |
+| Fold 2 | 0.9095          | 0.7707       | 0.8632   | 0.8517         |
+| Fold 3 | 0.8997          | 0.7828       | 0.8982   | 0.8697         |
+| Fold 4 | 0.8772          | 0.7139       | 0.8364   | 0.8160         |
+| Fold 5 | 0.9046          | 0.7254       | 0.9027   | 0.8588         |
 
-Add more folds or link to leaderboard once finalized.
 
 ---
 
