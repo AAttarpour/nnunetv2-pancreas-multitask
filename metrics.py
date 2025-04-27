@@ -230,7 +230,7 @@ def plot_classification_metrics(cls_metrics: pd.DataFrame, output_dir: str):
     axes[1].set_title('Predicted Probabilities by True Class', fontsize=12)
     axes[1].set_ylabel('Probability', fontsize=10)
     axes[1].set_xlabel('True Class', fontsize=10)
-    axes[1].legend(title='Predicted Class')
+    axes[1].legend(title='Predicted Class', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'classification_metrics.png'), dpi=300)
