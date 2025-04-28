@@ -2,13 +2,13 @@
 
 This repository is the official implementation of **A Deep Learning Pipeline for Joint Pancreas Segmentation and Subtype Classification in Abdominal CT**. It extends `nnUNetV2` by adding a **classification head** to perform **pancreas segmentation** and **subtype classification** jointly.
 
-## 🖼 Overview
+## Overview
 
 ![Approach](./assets/fig1-pipeline_overview.png)  
 
 ---
 
-## 📦 Requirements and Installation
+## Requirements and Installation
 
 **OS**: Ubuntu 20.04  
 **nnUNet Version**: v2.6.0 (from MIC-DKFZ)
@@ -17,6 +17,10 @@ This repository is the official implementation of **A Deep Learning Pipeline for
 # Create conda environment and install dependencies
 conda env create -f conda_env.yml
 conda activate nnunetv2
+
+# or use the requirements.txt
+conda activate nnunetv2
+pip install -r requirements.txt
 
 # Clone the official nnUNet repository and install it in editable mode
 git clone https://github.com/MIC-DKFZ/nnUNet.git
@@ -37,11 +41,11 @@ export nnUNet_results="./nnUNet_results"
 
 ---
 
-## 📂 Dataset
+## Dataset
 
 The dataset used is the **Pancreas Multi-task Segmentation + Classification** dataset.
 
-- Download the dataset from: [Insert link here if public]
+- I don't share the dataset as it was not publoc
 - Save the raw data in the `./datasets` folder.
 - Label CSV format (`subtype_results_train.csv`):
 
@@ -54,7 +58,7 @@ quiz_002.nii.gz,1
 
 ---
 
-## 🧪 Preprocessing
+## Preprocessing
 
 ```bash
 # Prepare dataset folders for nnUNetV2 format
@@ -71,7 +75,7 @@ cp ./nnUNet_raw/Dataset003_PancreasMultiTask/subtype_results_train.csv ./nnUNet_
 ```
 ---
 
-## 🏋️‍♀️ Training
+## Training
 
 To train the multi-task nnUNet model with a classification head:
 
@@ -79,7 +83,7 @@ To train the multi-task nnUNet model with a classification head:
 # Copy custom trainer to nnUNet directory
 cp nnUNetTrainerWithClassification.py ./nnUNet/nnunetv2/training/nnUNetTrainer/
 
-# Train with 3D full resolution for all the folds [0,1, 2, 3, 4]
+# Train with 3D full resolution for all the folds [0,1, 2, 3, 4] for fold zero run:
 CUDA_VISIBLE_DEVICES=0 nnUNetv2_train 003 3d_fullres 0 -tr nnUNetTrainerWithClassification --npz
 ```
 
@@ -91,21 +95,31 @@ CUDA_VISIBLE_DEVICES=0 nnUNetv2_train 003 3d_fullres 0 -tr nnUNetTrainerWithClas
 
 ---
 
-## 🚀 Inference with Improved Speed
+## Inference with Improved Speed
 Choose the best model among the folds (mine was #3)
 
 ```bash
-python inference_fast.py --model_dir nnUNet_results/Dataset003_PancreasMultiTask/nnUNetTrainerWithClassification__nnUNetPlans__3d_fullres --input_dir nnUNet_raw/Dataset003_PancreasMultiTask/imagesVal --output_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal --fold 3 --checkpoint checkpoint_best_combined.pth
+python inference_fast.py \
+--model_dir nnUNet_results/Dataset003_PancreasMultiTask/nnUNetTrainerWithClassification__nnUNetPlans__3d_fullres \
+--input_dir nnUNet_raw/Dataset003_PancreasMultiTask/imagesVal \
+--output_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal \
+--fold 3 \
+--checkpoint checkpoint_best_combined.pth
 ```
 
 ---
 
-## 🧮 Evaluation
+## Evaluation
 
 To compute segmentation metrics and classification macro-F1:
 
 ```bash
-python metrics.py --pred_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal --gt_dir nnUNet_raw/Dataset003_PancreasMultiTask/labelsVal --csv_path nnUNet_raw/Dataset003_PancreasMultiTask/validation_set.csv --logits_path nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal/classification_logits.json --output_dir ./metrics_fold3_best_model_with_fast_inference
+python metrics.py \
+--pred_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal \
+--gt_dir nnUNet_raw/Dataset003_PancreasMultiTask/labelsVal \
+--csv_path nnUNet_raw/Dataset003_PancreasMultiTask validation_set.csv \
+--logits_path nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal/classification_logits.json \
+--output_dir ./metrics_fold3_best_model_with_fast_inference
 ```
 
 Evaluation includes:
@@ -115,21 +129,21 @@ Evaluation includes:
 
 ---
 
-## 📊 Results
+## Results
 
 | Our Multi-Task Model                        | DSC (Pancreas) | DSC (Lesion) | Macro F1 | Combined Score |
 |-------------------------------|----------------|--------------|----------|----------------|
 | Fold 0 | 0.91          | 0.70       | 0.92   | 0.86         |
 | Fold 1 | 0.92          | 0.79       | 0.81   | 0.83         |
 | Fold 2 | 0.91          | 0.78       | 0.87   | 0.86         |
-| Fold 3 | 0.90          | 0.79       | 0.90   | 0.87         |
+| **Fold 3** | 0.90          | 0.79       | 0.90   | **0.87**         |
 | Fold 4 | 0.91          | 0.73       | 0.91   | 0.86         |
 
 
 ---
 
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 I thank the authors of [nnUNet](https://github.com/MIC-DKFZ/nnUNet) and the providers of the pancreas dataset.
 
