@@ -1,3 +1,10 @@
+"""
+This script is used to run inference on a trained nnUNet model and save the segmentation predictions and classification logits.
+It also includes a patch to the nnUNetTrainerWithClassification class to build the network architecture with a classification head.
+It uses multiprocessing to handle multiple predictions in parallel and saves the results in a specified output directory.
+
+"""
+
 import torch
 import numpy as np
 import os
