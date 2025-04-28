@@ -23,9 +23,7 @@ git clone https://github.com/MIC-DKFZ/nnUNet.git
 cd nnUNet
 pip install -e .
 
-# Clone this repo and return to it
-cd ../
-git clone https://github.com/YOUR_USERNAME/nnunetv2-pancreas-multitask.git
+
 cd nnunetv2-pancreas-multitask
 
 # Set environment variables
@@ -81,7 +79,7 @@ To train the multi-task nnUNet model with a classification head:
 # Copy custom trainer to nnUNet directory
 cp nnUNetTrainerWithClassification.py ./nnUNet/nnunetv2/training/nnUNetTrainer/
 
-# Train with 3D full resolution
+# Train with 3D full resolution for all the folds [0,1, 2, 3, 4]
 CUDA_VISIBLE_DEVICES=0 nnUNetv2_train 003 3d_fullres 0 -tr nnUNetTrainerWithClassification --npz
 ```
 
@@ -93,10 +91,11 @@ CUDA_VISIBLE_DEVICES=0 nnUNetv2_train 003 3d_fullres 0 -tr nnUNetTrainerWithClas
 
 ---
 
-## 🚀 Inference
+## 🚀 Inference with Improved Speed
+Choose the best model among the folds (mine was #3)
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 nnUNetv2_predict -d 003 -f 0 -tr nnUNetTrainerWithClassification -c 3d_fullres -o ./nnUNet_predictions
+python inference_fast.py --model_dir nnUNet_results/Dataset003_PancreasMultiTask/nnUNetTrainerWithClassification__nnUNetPlans__3d_fullres --input_dir nnUNet_raw/Dataset003_PancreasMultiTask/imagesVal --output_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal --fold 3 --checkpoint checkpoint_best_combined.pth
 ```
 
 ---
@@ -106,14 +105,13 @@ CUDA_VISIBLE_DEVICES=0 nnUNetv2_predict -d 003 -f 0 -tr nnUNetTrainerWithClassif
 To compute segmentation metrics and classification macro-F1:
 
 ```bash
-python evaluate.py --seg_data ./nnUNet_predictions --gt_data ./nnUNet_raw/Dataset003_PancreasMultiTask/labelsTr
+python metrics.py --pred_dir nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal --gt_dir nnUNet_raw/Dataset003_PancreasMultiTask/labelsVal --csv_path nnUNet_raw/Dataset003_PancreasMultiTask/validation_set.csv --logits_path nnUNet_raw/Dataset003_PancreasMultiTask/predictionsVal/classification_logits.json --output_dir ./metrics_fold3_best_model_with_fast_inference
 ```
 
 Evaluation includes:
 
-- Dice for **whole pancreas** (`label > 0`)
-- Dice for **lesions only** (`label == 2`)
-- Classification **macro-average F1** across 3 subtypes
+- Segmentation: Dice, HD95, recall, and precision for **pancreas** (`label == 1`), for **lesions** (`label == 2`), and combined (`label == 1 or 2`)
+- Classification: macro-average F1, recall, precision, and accuracy across 3 subtypes
 
 ---
 
