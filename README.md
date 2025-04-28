@@ -139,6 +139,13 @@ Evaluation includes:
 | **Fold 3** | 0.90          | 0.79       | 0.90   | **0.87**         |
 | Fold 4 | 0.91          | 0.73       | 0.91   | 0.86         |
 
+## Results of the best model (Fold3) on the validation set
+
+| Our Multi-Task Model                        | DSC (Pancreas) | DSC (Lesion) | Macro F1 | 
+|-------------------------------|----------------|--------------|----------|
+| Fold 3 | 0.90          | 0.61       | 0.68   | 
+
+
 
 ---
 
