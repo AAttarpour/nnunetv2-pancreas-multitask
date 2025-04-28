@@ -1,3 +1,10 @@
+"""
+This script is a modified version of the nnUNetPredictor class from nnunetv2.
+It's the same is the inference.py script, but with the addition of some techniques such as automatic mixed precision
+(FP16) inference and a patch to the nnUNetTrainerWithClassification class to build the network architecture with a classification head.
+
+"""
+
 import torch
 import numpy as np
 import os
